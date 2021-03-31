@@ -15,5 +15,9 @@
   "bugs": {
     "url": "https://github.com/BenBolthouse/dutiful-alpacas/issues"
   },
-  "homepage": "https://github.com/BenBolthouse/dutiful-alpacas#readme"
+  "homepage": "https://github.com/BenBolthouse/dutiful-alpacas#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "morgan": "^1.10.0"
+  }
 }
