@@ -1,0 +1,19 @@
+{
+  "name": "service-registry",
+  "version": "1.0.0",
+  "description": "Microservices Registry Node",
+  "main": "./bin/server",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BenBolthouse/dutiful-alpacas.git"
+  },
+  "author": "Ben Bolthouse",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/BenBolthouse/dutiful-alpacas/issues"
+  },
+  "homepage": "https://github.com/BenBolthouse/dutiful-alpacas#readme"
+}
