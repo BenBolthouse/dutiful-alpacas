@@ -4,7 +4,7 @@
   "description": "Microservices Registry Node",
   "main": "./bin/server",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "nodemon -r dotenv/config ./bin/server"
   },
   "repository": {
     "type": "git",
@@ -18,6 +18,12 @@
   "homepage": "https://github.com/BenBolthouse/dutiful-alpacas#readme",
   "dependencies": {
     "express": "^4.17.1",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "simple-node-logger": "^18.12.24"
+  },
+  "devDependencies": {
+    "dotenv": "^8.2.0",
+    "dotenv-cli": "^4.0.0",
+    "nodemon": "^2.0.7"
   }
 }
