@@ -1,13 +1,14 @@
-/******************************
- * Runtime Environment Config
- ******************************/
+//
+// ─── ENVIRONMENT CONFIG ─────────────────────────────────────────────────────────
+//
 
 const env = process.env;
 
 const config = {
-  port = env.PORT,
-  url = env.PUBLIC_URL,
-  version = env.VERSION,
+  port: env.PORT,
+  url: env.PUBLIC_IP,
+  schema: env.HTTP_SCHEMA,
+  version: env.VERSION,
 }
 
 module.exports = config;
