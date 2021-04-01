@@ -2,7 +2,7 @@
 // ─── SERVICE REGISTRY ───────────────────────────────────────────────────────────
 //
 
-const log = require("../index").get("log");
+const log = require("simple-node-logger").createSimpleLogger();
 
 /**********************************************************
  * Creates a data structure to track changes in registering,
