@@ -29,6 +29,7 @@ const logger = require("../log").logger;
 class ServiceRegistry {
   constructor() {
     this.clusters = [];
+    this.interval = 30;
     logger.info(`Service registry created`);
   }
 
@@ -54,16 +55,16 @@ class ServiceRegistry {
     // case of existing service cluster
     if (existing) {
       existing.add(service);
-      return `Service ${name.cyan} at version ${version.cyan} was successfully added to the registry.`; // prettier-ignore
+      return `Service ${name} at version ${version} was successfully added to the registry.`; // prettier-ignore
     }
     // case of non-existent cluster
     else {
       const cluster = new ServiceCluster(name, version);
       this.clusters.push(cluster);
-      this.clusters.sort((a, b) => (b.hash > a.hash ? -1 : 1));
+      this.clusters.sort((a, b) => (b.hash > a.hash ? 1 : -1));
       cluster.add(service);
       logger.info(`Created cluster ${cluster.hash.cyan}`);
-      return `Service ${name.cyan} at version ${version.cyan} was successfully added to the registry.`; // prettier-ignore
+      return `Service ${name} at version ${version} was successfully added to the registry.`; // prettier-ignore
     }
   };
 
@@ -94,7 +95,7 @@ class ServiceRegistry {
         const idx = this.clusters.indexOf(existing);
         this.clusters.splice(idx, 1);
         logger.info(`Removed empty cluster ${existing.hash.cyan}`);
-        return `Service ${name.cyan} at version ${version.cyan} was successfully removed from the registry.`; // prettier-ignore
+        return `Service ${name} at version ${version} was successfully removed from the registry.`; // prettier-ignore
       }
     }
   };
