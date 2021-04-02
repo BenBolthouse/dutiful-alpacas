@@ -23,8 +23,8 @@ const logger = require("../log").logger;
  * same socket.
  *
  * Services are pruned from the registry at a regular interval if the services
- * fail to send a keep alive signal to the registry client. The keep alive is
- * also consumed at the router level.
+ * fail to send a keep alive signal to the registry. The keep alive is also
+ * consumed at the router level.
  */
 class ServiceRegistry {
   constructor() {
@@ -35,7 +35,7 @@ class ServiceRegistry {
     // prune unresponsive services on the given interval
     this.pruneInterval = setInterval(() => {
       let counter = 0;
-      logger.info("Beginning interval service health check...");
+      logger.info("Begin health check...");
       // case of no services
       if (!this.clusters.length) {
         logger.info("Registry empty; health check complete".green);
@@ -96,6 +96,27 @@ class ServiceRegistry {
       return `Service ${name} at version ${version} was successfully added to the registry.`; // prettier-ignore
     }
   };
+  
+  /****************************************************************************
+   * Resets the timestamp of a specific service to prevent pruning.
+   * 
+   * @param {String} name Service name
+   * @param {String} version Semver service version
+   * @param {String} ip Service IP address
+   * @param {Integer} port Service port 
+   */
+  keepService = function(name, version, ip, port) {
+    const ipv = _formatIPV(ip);
+    const hash = _formatServiceHash(name, version, ipv, port);
+    // discover existing services with the same version
+    const existing = this.clusters.find((c) => c.version === version);
+    // case of non-existent cluster
+    if (!existing) _error("Service cluster does not exist", 400);
+    // case of existing service cluster
+    else if (existing) {
+      existing.keep(hash);
+    }
+  }
 
   /****************************************************************************
    * Removes a service from the service registry cluster if available. If a
@@ -221,6 +242,29 @@ class ServiceCluster {
     }
   };
 
+  /****************************************************************************
+   * @param {String} hash Service hash
+   */
+  keep = function(hash) {
+    let cur = this.head;
+    // case of empty list
+    if (!cur) {
+      return _error("Cluster is empty", 404);
+    }
+    // case of at least one node
+    else if (cur) {
+      while (cur) {
+        if (cur.hash === hash) {
+          cur.timestamp = _getTimestamp();
+          return logger.info(`Keep alive received on ${cur.hash.cyan} from cluster ${this.hash.cyan}`); // prettier-ignore
+        }
+        cur = cur.next;
+      }
+    }
+    // case of missing service
+    return _error("Service not in cluster", 404);
+  }
+  
   /****************************************************************************
    * @param {String} hash Service hash
    */
