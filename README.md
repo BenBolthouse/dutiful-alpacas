@@ -1,2 +1,2 @@
 # dutiful-alpacas
-Project name pending: a microservices-driven productivity and time-tracking application.
+Project name, readme and wiki pending: a microservices-driven application written in Node.
