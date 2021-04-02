@@ -303,4 +303,5 @@ describe("Service Registry".magenta, () => {
       });
     });
   });
+  clearInterval(reg.pruneInterval);
 });
