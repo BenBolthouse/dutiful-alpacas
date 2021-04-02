@@ -30,7 +30,36 @@ class ServiceRegistry {
   constructor() {
     this.clusters = [];
     this.interval = 30;
+    this.timestamp = _getTimestamp();
     logger.info(`Service registry created`);
+    // prune unresponsive services on the given interval
+    this.pruneInterval = setInterval(() => {
+      let counter = 0;
+      logger.info("Beginning interval service health check...");
+      // case of no services
+      if (!this.clusters.length) {
+        logger.info("Registry empty; health check complete".green);
+      }
+      // case of at least one service cluster
+      else {
+        this.clusters.forEach((c) => {
+          counter += c.prune(this.timestamp);
+          // cleanup empty clusters
+          if (!c.head) {
+            const idx = this.clusters.indexOf(c);
+            this.clusters.splice(idx, 1);
+            logger.info(`Removed empty cluster ${c.hash.cyan}`);
+          }
+        });
+        this.timestamp = _getTimestamp();
+        // case of positive counter
+        if (counter) {
+          return logger.warn(`Health check complete; ${counter} services pruned`.red);
+        }
+        // case of zero count
+        else return logger.info("Health check complete; no services pruned".green);
+      }
+    }, this.interval * 1000);
   }
 
   /****************************************************************************
@@ -239,6 +268,27 @@ class ServiceCluster {
 
   /****************************************************************************
    */
+  prune = function (timestamp) {
+    let counter = 0;
+    let cur = this.head;
+    // case of empty list
+    if (!cur) return _error("Cluster is empty", 404);
+    // case of at least one node
+    else if (cur) {
+      while (cur) {
+        let nxt = cur.next;
+        if (cur.timestamp < timestamp) {
+          this.remove(cur.hash);
+          counter++;
+        }
+        cur = nxt;
+      }
+    }
+    return counter;
+  };
+
+  /****************************************************************************
+   */
   getAll = function () {
     let cur = this.head;
     const output = [];
@@ -263,6 +313,7 @@ class ServiceCluster {
 
 class Service {
   constructor(name, version, ip, port) {
+    this.timestamp = _getTimestamp();
     this.hash = _formatServiceHash(name, version, ip, port);
     this.prev = null;
     this.next = null;
@@ -294,6 +345,10 @@ _formatServiceHash = function (name, version, ip, port) {
 
 _formatMinorVersion = function (version) {
   return `${semver.major(version)}.${semver.minor(version)}`;
+};
+
+_getTimestamp = function () {
+  return Date.parse(new Date()) / 1000;
 };
 
 module.exports = ServiceRegistry;
