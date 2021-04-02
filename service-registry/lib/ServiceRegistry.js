@@ -1,199 +1,298 @@
+const colors = require("colors");
+const semver = require("semver");
+
+const config = require("../config");
+const logger = require("../log").logger;
+
 //
 // ─── SERVICE REGISTRY ───────────────────────────────────────────────────────────
 //
 
-const log = require("simple-node-logger").createSimpleLogger();
-
-/**********************************************************
- * Creates a data structure to track changes in registering,
- * un-registering and getting services.
+/******************************************************************************
+ * In-memory store for registered services.
+ *
+ * Services are grouped by version tag (semver 2.0) into clusters. Clusters
+ * behave as load balancers for grouped services with a round robin strategy.
+ *
+ * Service urls are provided from the registry upon request to fulfill service
+ * client requests.
+ *
+ * Implementation is intended to be done at the router level and routes forward
+ * request data to populate clusters. Duplicate entries are disallowed;
+ * duplicates are considered to be services with the same version tag on the
+ * same socket.
+ *
+ * Services are pruned from the registry at a regular interval if the services
+ * fail to send a keep alive signal to the registry client. The keep alive is
+ * also consumed at the router level.
  */
 class ServiceRegistry {
-  /********************************************************/
   constructor() {
     this.clusters = [];
-    this.timeout = 30;
+    logger.info(`Service registry created`);
   }
 
-  /********************************************************
-   * Adds a new service to a service registry cluster
-   * defined by service name and version.
+  /****************************************************************************
+   * Adds a new service to a service registry cluster defined by service name,
+   * version and address. If a service registry cluster is not available for the
+   * version of the service then one will be created. Clusters are ordered by
+   * hash in descending order, thereby allowing requests for major or minor
+   * service versions to select the most stable and up-to-date versions.
    *
    * @param {String} name Service name
-   * @param {String} version Semver service version string
+   * @param {String} version Semver service version
    * @param {String} ip Service IP address
    * @param {Integer} port Service port
+   *
+   * @returns Http response message
    */
-  add = function (name, version, ip, port) {
-    const hash = `n:${name}_v:${version}`;
-    const service = new Service(name, version, ip, port);
-    // discover existing services with the same version
-    const existing = this.clusters.find((s) => s.hash === hash);
+  registerService = function (name, version, ip, port) {
+    const ipv = _formatIPV(ip);
+    const service = new Service(name, version, ipv, port);
+    // discover existing services with the same minor version
+    const existing = this.clusters.find((s) => s.version === version);
     // case of existing service cluster
     if (existing) {
       existing.add(service);
+      return `Service ${name.cyan} at version ${version.cyan} was successfully added to the registry.`; // prettier-ignore
     }
     // case of non-existent cluster
-    else if (!existing) {
-      this.clusters.push(new ServiceCluster(service));
+    else {
+      const cluster = new ServiceCluster(name, version);
+      this.clusters.push(cluster);
+      this.clusters.sort((a, b) => (b.hash > a.hash ? -1 : 1));
+      cluster.add(service);
+      logger.info(`Created cluster ${cluster.hash.cyan}`);
+      return `Service ${name.cyan} at version ${version.cyan} was successfully added to the registry.`; // prettier-ignore
     }
   };
 
-  remove = function (name, version, ip, port) {
-    const clusterHash = `n:${name}_v:${version}`;
-    const serviceHash = `n:${name}_v:${version}_a:${ip}_p:${port}`;
+  /****************************************************************************
+   * Removes a service from the service registry cluster if available. If a
+   * service registry cluster is empty after removal of the service then the
+   * registry will automatically remove the cluster.
+   *
+   * @param {String} name Service name
+   * @param {String} version Semver service version
+   * @param {String} ip Service IP address
+   * @param {Integer} port Service port
+   *
+   * @returns Http response message
+   */
+  removeService = function (name, version, ip, port) {
+    const ipv = _formatIPV(ip);
+    const hash = _formatServiceHash(name, version, ipv, port);
     // discover existing services with the same version
-    const existing = this.clusters.find((s) => s.hash === clusterHash);
+    const existing = this.clusters.find((c) => c.version === version);
     // case of non-existent cluster
-    if (!existing) {
-      return log.error("Cannot remove Service: ServiceCluster does not exist.");
-    }
+    if (!existing) _error("Service cluster does not exist", 400);
     // case of existing service cluster
     else if (existing) {
-      existing.remove(serviceHash);
-      // case of empty service cluster remove cluster
+      existing.remove(hash);
+      // case of empty cluster remove cluster
       if (!existing.head) {
         const idx = this.clusters.indexOf(existing);
         this.clusters.splice(idx, 1);
+        logger.info(`Removed empty cluster ${existing.hash.cyan}`);
+        return `Service ${name.cyan} at version ${version.cyan} was successfully removed from the registry.`; // prettier-ignore
       }
     }
   };
 
-  get = function (name, version) {
-    const hash = `n:${name}_v:${version}`;
-    // discover existing services with the same version
-    const existing = this.clusters.find((s) => s.hash === hash);
-    // case of non-existent cluster
-    if (!existing) {
-      return log.error("Cannot get Service: ServiceCluster does not exist.");
+  /****************************************************************************
+   * Gets a service hash (url) by name and version. When provided a patch
+   * version the registry will find a cluster with the exact version and select
+   * the service at the cluster's cursor. If provided a major or minor version
+   * the registry will attempt to match a cluster that satisfies the version in
+   * descending order, i.e. beginning with higher major and minor versions.
+   *
+   * @param {String} name Service name
+   * @param {String} version Semver service version
+   *
+   * @returns Http response message
+   */
+  getService = function (name, version) {
+    // case of empty registry
+    if (!this.clusters.length) _error("Registry does not have any clusters", 404); // prettier-ignore
+    // case of non-empty registry
+    else {
+      // find first cluster version that satisfies semver
+      // and service name
+      const cluster = this.clusters.find((c) => {
+        return name === c.name && semver.satisfies(c.version, version);
+      });
+      // case of cluster non-existent
+      if (!cluster) _error("Service cluster does not exist", 404);
+      // case of cluster existing
+      else {
+        return cluster.get().hash;
+      }
     }
-    // case of existing service cluster
-    else if (existing) return existing.get();
+  };
+
+  /****************************************************************************
+   * Returns a complete JSON-friendly list of registry clusters and services.
+   *
+   * @returns {Array<ServiceCluster>} Array of service clusters and services
+   */
+  getRegistry = function () {
+    const output = [];
+    this.clusters.forEach((c) => {
+      output.push({
+        hash: c.hash,
+        services: c.getAll(),
+      });
+    });
+    return output;
   };
 }
 
-/**********************************************************
- * Creates a singly-linked list that represents a cluster of
- * services of the same type. For instances of clusters with
- * a single node, the single node is given all of the
- * requests. For instances of clusters with more than one
- * node the cluster load balances to the next available node
- * in the list, and then returns to the first node. This is,
- * in effect, a round robin load balancer.
- */
+//
+// ─── SERVICE CLUSTER ────────────────────────────────────────────────────────────
+//
+
 class ServiceCluster {
-  /********************************************************
-   * @param {Service} service The initial service instance
+  /****************************************************************************
+   * @param {String} service Service name
+   * @param {String} version Semver service version
    */
-  constructor(service) {
-    this._typeCheckService(service);
-    this.hash = `n:${service.data.name}_v:${service.data.version}`;
-    this.version = service.data.version;
-    this.head = service;
-    this.cursor = service;
+  constructor(service, version) {
+    this.hash = _formatClusterHash(service, version);
+    this.name = service;
+    this.version = version;
+    this.head = null;
+    this.cursor = null;
   }
 
-  /********************************************************
-   * Add a service to the end of the cluster linked list.
-   *
-   * @param {Service} service
+  /****************************************************************************
+   * @param {Service} service instanceof `Service`
    */
   add = function (service) {
-    _typeCheckService(service);
     let cur = this.head;
     // case of empty list
-    if (!cur) return (this.head = service);
-    // case of at least one node
-    else {
-      while (cur) {
-        if (!cur.next) {
-          service.prev = cur;
-          cur.next = service;
-          return log.info(`Added service ${service.data.hash}`);
-        }
-        cur = cur.next;
+    if (!cur) {
+      this.cursor = service;
+      this.head = service;
+      return logger.info(`Added service ${service.hash.cyan} to cluster ${this.hash.cyan}`); // prettier-ignore
+    }
+    // case of non-empty list
+    while (cur) {
+      // case of duplicate node
+      if (cur.hash === service.hash) {
+        return _error("Service is already in cluster", 400);
       }
+      // case of non-duplicate node
+      else if (!cur.next) {
+        service.prev = cur;
+        cur.next = service;
+        return logger.info(`Added service ${service.hash.cyan} to cluster ${this.hash.cyan}`); // prettier-ignore
+      }
+      cur = cur.next;
     }
   };
 
-  /********************************************************
-   * Removes a service from the cluster by hash.
-   *
-   * @param {String} hash
+  /****************************************************************************
+   * @param {String} hash Service hash
    */
   remove = function (hash) {
-    let prv = this.head.prev;
     let cur = this.head;
-    let nxt = this.head.next;
     // case of empty list
     if (!cur) {
-      log.error("Cannot remove Service: ServiceCluster contains 0 services.");
+      return _error("Cluster is empty", 404);
     }
-    // case of exactly one node
-    else if (cur && !nxt) {
-      if (cur.data.hash === hash) return (this.head = null);
-    }
-    // case of at least two nodes
-    else if (cur && nxt) {
+    // case of at least one node
+    else if (cur) {
       while (cur) {
-        if (cur.data.hash === hash) {
-          if (!prv) this.head = nxt;
-          else if (prv) prv.next = nxt;
-          return log.info(`Removed service ${hash}`);
+        if (cur.hash === hash) {
+          if (!cur.prev) {
+            this.head = cur.next;
+            this.head && (this.head.prev = null);
+          } else if (cur.prev) {
+            cur.prev.next = cur.next;
+          }
+          this.cursor = this.head;
+          cur.prev = null;
+          cur.next = null;
+          return logger.info(`Removed service ${cur.hash.cyan} from cluster ${this.hash.cyan}`); // prettier-ignore
         }
-        prv = prv.next;
         cur = cur.next;
-        nxt = nxt.next;
       }
     }
     // case of missing service
-    else log.warning("Cannot remove Service: Service not found.");
+    return _error("Service not in cluster", 404);
   };
 
-  /********************************************************
-   * Gets the next service in the sequence of services.
+  /****************************************************************************
    */
   get = function () {
     const cur = this.cursor;
-
+    // case of empty list
+    if (!cur) return _error("Cluster is empty", 404);
     // case of last node loop to head
     if (!cur.next) this.cursor = this.head;
     // case of first or mid node move to next
     else this.cursor = cur.next;
-
     // return the orig position not the new position
     return cur;
   };
 
-  /********************************************************
-   * Private method checks if the object provided is a
-   * service and will throw TypeError if false.
-   *
-   * @param {Object} input
+  /****************************************************************************
    */
-  _typeCheckService = function (input) {
-    if (!input || typeof input !== Service) {
-      throw new TypeError(
-        "ServiceCluster was provided an object that is not a Service."
-      );
+  getAll = function () {
+    let cur = this.head;
+    const output = [];
+    // case of empty list
+    if (!cur) return _error("Cluster is empty", 404);
+    // case of one or more nodes
+    else if (cur) {
+      while (cur) {
+        output.push({
+          hash: cur.hash,
+        });
+        cur = cur.next;
+      }
     }
+    return output;
   };
 }
 
-/**********************************************************
- * Creates a node for use in a ServiceCluster.
- */
+//
+// ─── SERVICE ────────────────────────────────────────────────────────────────────
+//
+
 class Service {
   constructor(name, version, ip, port) {
-    this.data = {};
-    this.data.hash = `n:${name}_v:${version}_a:${ip}_p:${port}`;
-    this.data.name = name;
-    this.data.version = version;
-    this.data.ip = ip;
-    this.data.port = port;
+    this.hash = _formatServiceHash(name, version, ip, port);
     this.prev = null;
     this.next = null;
   }
 }
+
+//
+// ─── HELPER FUNCTIONS ───────────────────────────────────────────────────────────
+//
+
+_error = function (message, code) {
+  const err = new Error(message);
+  err.statusCode = code;
+  throw err;
+};
+
+_formatIPV = function (ip) {
+  if (config.ipv === "IPv4") return ip.replace("::ffff:", "");
+  else return ip;
+};
+
+_formatClusterHash = function (name, version) {
+  return `${name}/v${version}`;
+};
+
+_formatServiceHash = function (name, version, ip, port) {
+  return `${ip}:${port}/${name}/v${version}`;
+};
+
+_formatMinorVersion = function (version) {
+  return `${semver.major(version)}.${semver.minor(version)}`;
+};
 
 module.exports = ServiceRegistry;
