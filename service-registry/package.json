@@ -17,9 +17,11 @@
   },
   "homepage": "https://github.com/BenBolthouse/dutiful-alpacas#readme",
   "dependencies": {
+    "colors": "^1.4.0",
     "express": "^4.17.1",
     "morgan": "^1.10.0",
-    "simple-node-logger": "^18.12.24"
+    "semver": "^7.3.5",
+    "winston": "^3.3.3"
   },
   "devDependencies": {
     "dotenv": "^8.2.0",
