@@ -20,27 +20,34 @@ service.use(httpLogger);
 
 // ——— API Routing ——— //
 
-service.put("/registry/:name/:version/:port", (req, res, next) => {
+service.put("/registry/:name/:version/:port", (req, res, _next) => {
   const { name, version, port } = req.params;
   const { ip } = req;
   const result = service.registry.registerService(name, version, ip, parseInt(port));
   return res.status(200).json({ message: result });
 });
 
-service.delete("/registry/:name/:version/:port", (req, res, next) => {
+service.patch("/registry/:name/:version/:port", (req, res, _next) => {
+  const { name, version, port } = req.params;
+  const { ip } = req;
+  service.registry.keepService(name, version, ip, parseInt(port));
+  return res.status(200).json({ message: "Stayin alive, stayin alive. Oh oh oh oh stayin allliiiii..."});
+});
+
+service.delete("/registry/:name/:version/:port", (req, res, _next) => {
   const { name, version, port } = req.params;
   const { ip } = req;
   const result = service.registry.removeService(name, version, ip, parseInt(port));
   return res.status(200).json({ message: result });
 });
 
-service.get("/registry/:name/:version", (req, res, next) => {
+service.get("/registry/:name/:version", (req, res, _next) => {
   const { name, version } = req.params;
   const result = service.registry.getService(name, version);
   return res.status(200).json({ service: result });
 });
 
-service.get("/registry", (req, res, next) => {
+service.get("/registry", (_req, res, _next) => {
   const result = service.registry.getRegistry();
   return res.status(200).json({ registry: result });
 });
@@ -59,7 +66,7 @@ service.use((err, _req, res, _next) => {
   : {}
   // handle 400 range errors
   if (status && status >= 400 && status < 500) {
-    logger.error(err.message.magenta);
+    logger.warning(err.message.magenta);
     return res.status(400).json({
       message: err.message,
       ...trace,
