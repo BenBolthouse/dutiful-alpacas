@@ -10,9 +10,9 @@ const { logger, httpLogger } = require("./log");
 
 const ServiceRegistry = require("./lib/ServiceRegistry");
 
-const serviceRegistry = new ServiceRegistry();
-
 const service = express();
+
+service.registry = new ServiceRegistry();
 
 // ——— Logging Config ——— //
 
@@ -23,25 +23,25 @@ service.use(httpLogger);
 service.put("/registry/:name/:version/:port", (req, res, next) => {
   const { name, version, port } = req.params;
   const { ip } = req;
-  const result = serviceRegistry.registerService(name, version, ip, parseInt(port));
+  const result = service.registry.registerService(name, version, ip, parseInt(port));
   return res.status(200).json({ message: result });
 });
 
 service.delete("/registry/:name/:version/:port", (req, res, next) => {
   const { name, version, port } = req.params;
   const { ip } = req;
-  const result = serviceRegistry.removeService(name, version, ip, parseInt(port));
+  const result = service.registry.removeService(name, version, ip, parseInt(port));
   return res.status(200).json({ message: result });
 });
 
 service.get("/registry/:name/:version", (req, res, next) => {
   const { name, version } = req.params;
-  const result = serviceRegistry.getService(name, version);
+  const result = service.registry.getService(name, version);
   return res.status(200).json({ service: result });
 });
 
 service.get("/registry", (req, res, next) => {
-  const result = serviceRegistry.getRegistry();
+  const result = service.registry.getRegistry();
   return res.status(200).json({ registry: result });
 });
 
