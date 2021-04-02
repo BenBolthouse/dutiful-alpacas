@@ -2,8 +2,8 @@
 
 const service = require("../index");
 const config = require("../config");
-const log = service.get("log");
+const { logger } = require("../log");
 
 const listener = service.listen(config.port || 0, () => {
-  log.info(`Listening on ${config.schema}://${config.url}:${listener.address().port}`);
+  logger.info(`Listening on ${config.schema}://${config.url}:${listener.address().port}`);
 });
