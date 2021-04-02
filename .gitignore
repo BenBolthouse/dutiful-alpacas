@@ -105,3 +105,4 @@ dist
 
 # VS Code config
 .vscode
+*.code-workspace
